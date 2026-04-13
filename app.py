@@ -11,7 +11,7 @@ if "messages" not in st.session_state:
 if "config" not in st.session_state:
     st.session_state.config = {"model": "Groq", "key": "", "extra": ""}
 
-st.title("CHATAPI")
+st.title("🚀 ULTIMATE CHAT API")
 
 with st.sidebar:
     st.header("Credentials")
@@ -24,9 +24,9 @@ with st.sidebar:
     
     extra_param = ""
     if selected_provider == "Hugging Face":
-        extra_param = st.text_input("Model ID (e.g., mistralai/Mistral-7B-v0.1)")
+        extra_param = st.text_input("Model ID", placeholder="meta-llama/Llama-3.1-8B-Instruct")
     elif selected_provider == "RapidAPI":
-        extra_param = st.text_input("API Host (e.g., twinword-sentiment-analysis.p.rapidapi.com)")
+        extra_param = st.text_input("API Host", placeholder="your-api-host.p.rapidapi.com")
 
     if st.button("Save Configuration"):
         st.session_state.config = {
@@ -43,14 +43,11 @@ with st.sidebar:
 def call_api(prompt):
     cfg = st.session_state.config
     if not cfg["key"]:
-        return "Please enter an API Key in the sidebar."
+        return "⚠️ Please enter an API Key in the sidebar."
 
     try:
         if cfg["model"] == "Groq":
-            client = openai.OpenAI(
-                api_key=cfg["key"],
-                base_url="https://api.groq.com/openai/v1"
-            )
+            client = openai.OpenAI(api_key=cfg["key"], base_url="https://api.groq.com/openai/v1")
             res = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}]
@@ -58,21 +55,32 @@ def call_api(prompt):
             return res.choices[0].message.content
 
         elif cfg["model"] == "Hugging Face":
-            model_id = cfg["extra"] if cfg["extra"] else "gpt2"
+            model_id = cfg["extra"] if cfg["extra"] else "mistralai/Mistral-7B-Instruct-v0.3"
             api_url = f"https://api-inference.huggingface.co/models/{model_id}"
             headers = {"Authorization": f"Bearer {cfg['key']}"}
-            res = requests.post(api_url, headers=headers, json={"inputs": prompt})
-            return res.json()[0]['generated_text']
+            payload = {"inputs": prompt, "options": {"wait_for_model": True}}
+            
+            response = requests.post(api_url, headers=headers, json=payload)
+            if response.status_code != 200:
+                return f"Error {response.status_code}: {response.text}"
+            
+            data = response.json()
+            # Hugging Face returns different shapes based on model type
+            if isinstance(data, list) and 'generated_text' in data[0]:
+                return data[0]['generated_text']
+            return str(data)
 
         elif cfg["model"] == "RapidAPI":
-            url = f"https://{cfg['extra']}/analyze/"
+            url = f"https://{cfg['extra']}/chat" # Note: RapidAPI endpoints vary by API
             headers = {
                 "X-RapidAPI-Key": cfg["key"],
                 "X-RapidAPI-Host": cfg["extra"],
                 "Content-Type": "application/json"
             }
-            res = requests.post(url, headers=headers, json={"text": prompt})
-            return str(res.json())
+            response = requests.post(url, headers=headers, json={"messages": [{"role": "user", "content": prompt}]})
+            if response.status_code != 200:
+                return f"RapidAPI Error {response.status_code}: {response.text}"
+            return response.json().get('response', response.text)
 
         elif cfg["model"] == "OpenAI":
             client = openai.OpenAI(api_key=cfg["key"])
@@ -98,7 +106,7 @@ def call_api(prompt):
             return res.text
 
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"System Error: {str(e)}"
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
