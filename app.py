@@ -3,115 +3,132 @@ import openai
 import anthropic
 import google.generativeai as genai
 import requests
+import json
 
-st.set_page_config(page_title="ULTIMATE CHAT API", layout="wide")
+# Setup
+st.set_page_config(page_title="UNIVERSAL AI HUB 2026", layout="wide")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "config" not in st.session_state:
-    st.session_state.config = {"model": "Groq", "key": "", "extra": ""}
 
-st.title("🚀 ULTIMATE CHAT API")
-
+# --- SIDEBAR CONFIGURATION ---
 with st.sidebar:
-    st.header("Credentials")
-    selected_provider = st.selectbox(
-        "Provider", 
-        ["Groq", "Hugging Face", "RapidAPI", "OpenAI", "Claude", "Gemini"]
+    st.header("🔌 Provider Setup")
+    provider = st.selectbox(
+        "Select AI Engine", 
+        ["OpenAI", "Anthropic (Claude)", "Google (Gemini)", "Groq", "Hugging Face", "RapidAPI", "Microsoft Copilot"]
     )
     
-    api_key = st.text_input("API Key", type="password")
+    key = st.text_input("API Key / Token", type="password")
     
-    extra_param = ""
-    if selected_provider == "Hugging Face":
-        extra_param = st.text_input("Model ID", placeholder="meta-llama/Llama-3.1-8B-Instruct")
-    elif selected_provider == "RapidAPI":
-        extra_param = st.text_input("Full Endpoint URL", placeholder="https://api-name.p.rapidapi.com/v1/chat")
+    # Contextual inputs based on provider
+    model_id = ""
+    extra_header = ""
+    
+    if provider == "OpenAI":
+        model_id = st.text_input("Model", value="gpt-5-mini")
+    elif provider == "Anthropic (Claude)":
+        model_id = st.text_input("Model", value="claude-4.5-sonnet")
+    elif provider == "Google (Gemini)":
+        model_id = st.text_input("Model", value="gemini-2.5-pro")
+    elif provider == "Groq":
+        model_id = st.text_input("Model", value="llama-4-70b-versatile")
+    elif provider == "Hugging Face":
+        model_id = st.text_input("Model Path", placeholder="meta-llama/Llama-4-8B")
+    elif provider == "RapidAPI":
+        model_id = st.text_input("Full Request URL", placeholder="https://api-name.p.rapidapi.com/v1/chat")
+    elif provider == "Microsoft Copilot":
+        model_id = st.text_input("Endpoint URL", placeholder="https://{resource}.openai.azure.com/...")
+        extra_header = st.text_input("API Version", value="2025-05-01-preview")
 
-    if st.button("Save Configuration"):
-        st.session_state.config = {
-            "model": selected_provider,
-            "key": api_key,
-            "extra": extra_param
-        }
-        st.success("Configured!")
-
-    if st.button("Clear Chat"):
+    if st.button("🔄 Clear Conversation"):
         st.session_state.messages = []
         st.rerun()
 
-def call_api(prompt):
-    cfg = st.session_state.config
-    if not cfg["key"]:
-        return "⚠️ Please enter an API Key in the sidebar."
-
+# --- THE UNIVERSAL API ADAPTER ---
+def universal_call(prompt):
+    if not key: return "❌ Please enter an API Key."
+    
     try:
-        if cfg["model"] == "Groq":
-            client = openai.OpenAI(api_key=cfg["key"], base_url="https://api.groq.com/openai/v1")
+        # 1. OPENAI / GROQ (Standardized OpenAI Protocol)
+        if provider in ["OpenAI", "Groq"]:
+            base = "https://api.groq.com/openai/v1" if provider == "Groq" else None
+            client = openai.OpenAI(api_key=key, base_url=base)
             res = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model=model_id,
                 messages=[{"role": "user", "content": prompt}]
             )
             return res.choices[0].message.content
 
-        elif cfg["model"] == "Hugging Face":
-            model_id = cfg["extra"] if cfg["extra"] else "mistralai/Mistral-7B-Instruct-v0.3"
-            api_url = f"https://api-inference.huggingface.co/models/{model_id}"
-            headers = {"Authorization": f"Bearer {cfg['key']}"}
-            payload = {"inputs": prompt, "options": {"wait_for_model": True}}
-            response = requests.post(api_url, headers=headers, json=payload)
-            data = response.json()
-            return data[0]['generated_text'] if isinstance(data, list) else str(data)
-
-        elif cfg["model"] == "RapidAPI":
-            # Uses the FULL URL provided in the 'extra' field
-            url = cfg["extra"]
-            # Extract host from URL for headers
-            host = url.split("//")[-1].split("/")[0]
-            headers = {
-                "X-RapidAPI-Key": cfg["key"],
-                "X-RapidAPI-Host": host,
-                "Content-Type": "application/json"
-            }
-            # Standard payload - most RapidAPI LLMs follow this format
-            payload = {"messages": [{"role": "user", "content": prompt}], "model": "gpt-4"}
-            response = requests.post(url, headers=headers, json=payload)
-            
-            if response.status_code != 200:
-                return f"RapidAPI Error {response.status_code}. Make sure the URL is correct!"
-            
-            res_json = response.json()
-            # Try to find the text in common response locations
-            return res_json.get('choices', [{}])[0].get('message', {}).get('content', str(res_json))
-
-        elif cfg["model"] == "OpenAI":
-            client = openai.OpenAI(api_key=cfg["key"])
-            res = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}])
-            return res.choices[0].message.content
-
-        elif cfg["model"] == "Claude":
-            client = anthropic.Anthropic(api_key=cfg["key"])
-            res = client.messages.create(model="claude-3-5-sonnet-20240620", max_tokens=1024, messages=[{"role": "user", "content": prompt}])
+        # 2. ANTHROPIC CLAUDE
+        elif provider == "Anthropic (Claude)":
+            client = anthropic.Anthropic(api_key=key)
+            res = client.messages.create(
+                model=model_id,
+                max_tokens=2000,
+                messages=[{"role": "user", "content": prompt}]
+            )
             return res.content[0].text
 
-        elif cfg["model"] == "Gemini":
-            genai.configure(api_key=cfg["key"])
-            model = genai.GenerativeModel('gemini-1.5-flash')
+        # 3. GOOGLE GEMINI
+        elif provider == "Google (Gemini)":
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel(model_id)
             res = model.generate_content(prompt)
             return res.text
 
+        # 4. HUGGING FACE (Inference API)
+        elif provider == "Hugging Face":
+            url = f"https://api-inference.huggingface.co/models/{model_id}"
+            headers = {"Authorization": f"Bearer {key}"}
+            payload = {"inputs": prompt, "parameters": {"max_new_tokens": 500}}
+            response = requests.post(url, headers=headers, json=payload)
+            data = response.json()
+            # Handle different HF output formats
+            if isinstance(data, list): return data[0].get('generated_text', str(data))
+            return data.get('generated_text', str(data))
+
+        # 5. RAPIDAPI (Adaptive Payload)
+        elif provider == "RapidAPI":
+            host = model_id.split("//")[-1].split("/")[0]
+            headers = {
+                "X-RapidAPI-Key": key,
+                "X-RapidAPI-Host": host,
+                "Content-Type": "application/json"
+            }
+            # Most RapidAPI LLMs expect this OpenAI-clone format now
+            payload = {"messages": [{"role": "user", "content": prompt}], "model": "gpt-4o"}
+            response = requests.post(model_id, headers=headers, json=payload)
+            res_j = response.json()
+            return res_j['choices'][0]['message']['content'] if 'choices' in res_j else str(res_j)
+
+        # 6. MICROSOFT COPILOT (Azure OpenAI)
+        elif provider == "Microsoft Copilot":
+            headers = {"api-key": key, "Content-Type": "application/json"}
+            payload = {"messages": [{"role": "user", "content": prompt}]}
+            params = {"api-version": extra_header}
+            response = requests.post(model_id, headers=headers, json=payload, params=params)
+            res_j = response.json()
+            return res_j['choices'][0]['message']['content']
+
     except Exception as e:
-        return f"System Error: {str(e)}"
+        return f"🚨 Connection Error: {str(e)}"
+
+# --- CHAT INTERFACE ---
+st.title("🌐 Universal AI Hub")
+st.caption(f"Connected to: **{provider}**")
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-if prompt := st.chat_input("Ask anything..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
+if user_input := st.chat_input("Send a message..."):
+    st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(user_input)
+        
     with st.chat_message("assistant"):
-        response = call_api(prompt)
-        st.markdown(response)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+        with st.spinner("Thinking..."):
+            response = universal_call(user_input)
+            st.markdown(response)
+            st.session_state.messages.append({"role": "assistant", "content": response})
